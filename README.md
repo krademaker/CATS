@@ -11,4 +11,4 @@ _information about our methodology here._
 _information about the repository's file organization here._
 
 ## Members
-Will Harley, Saarika Prathivadi Bhayankaram , Koen Rademaker & Joris Visser.
+Will Harley, Saarika Prathivadi Bhayankaram, Koen Rademaker & Joris Visser.
