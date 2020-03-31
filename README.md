@@ -2,7 +2,7 @@
 _general information here_ 
 
 ## Background
-This was part of the course ['Bioinformatics for Translational Medicine'](https://studiegids.vu.nl/en/2019-2020/courses/X_405092), taught at the Vrije Universiteit Amsterdam as part of the MSc Bioinformatics and Systems Biology.
+This was part of the course ['Bioinformatics for Translational Medicine'](https://studiegids.vu.nl/en/2019-2020/courses/X_405092), taught at the Vrije Universiteit Amsterdam during the MSc Bioinformatics and Systems Biology.
 
 ## Methodology
 _information about our methodology here._
