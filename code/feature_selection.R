@@ -1,0 +1,44 @@
+library(ggplot2)
+root_dir = getwd()
+
+#################### Loading the dataset
+
+########## aCGH data
+# load called log2-ratios of copy numbers between diseased and healthy tissues
+train_call <- read.delim(file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep = '\t')
+# add ID for prospective features (genomic regions)
+train_call$ID <- seq.int(nrow(train_call))
+# store data on genomic regions separately
+genomic_regions <- train_call[c('ID', 'Chromosome', 'Start', 'End', 'Nclone')]
+# convert aCGH to purely numerical data, transpose to set genomic regions as features
+train_call <- subset(train_call, select = -c(Chromosome, Start, End, Nclone))
+train_call <- as.data.frame(t(subset(train_call, select = -c(ID))))
+
+########## clinical data
+# load and format clinical data
+train_clinical <- read.delim(file.path(root_dir, 'data', 'train_clinical.tsv'), header = TRUE, sep = '\t')
+row.names(train_clinical) <- train_clinical$Sample
+train_clinical <- train_clinical[,-(1:1), drop=FALSE]
+# display the the distribution of clinical subgroups
+summary(train_clinical)
+
+
+#################### PCA
+
+########## Principal Component Analysis
+# merge data with clinical labels for visualization later on
+train_call.pca_data <- merge(train_clinical, train_call, by = 'row.names')
+# remove row names
+train_call.pca_data$Row.names <- NULL
+# run PCA with scaling applied
+train_call.pca <- prcomp(train_call.pca_data[,c(2:length(train_call.pca_data))], scale. = TRUE)
+# format subgroup-annotated data for PC 1 & 2
+train_call.pc_1_2_annotated <- data.frame('Subgroup' = train_call.pca_data$Subgroup, train_call.pca$x[, 1:2])
+# extract variances per PC
+train_call.pca.variances <- round(train_call.pca$sdev^2/sum(train_call.pca$sdev^2) * 100, digits = 2)
+# generate plot of samples for PC 1 & 2, coloured according to subgroup
+pca_plot <- ggplot(data = train_call.pc_1_2_annotated) + geom_point(aes(x = PC1, y = PC2, col = Subgroup)) + labs(x = paste('PC1 (', train_call.pca.variances[1], '%)', sep=''), y = paste('PC2 (', train_call.pca.variances[2], '%)', sep = '')) + theme_minimal()
+# print plot
+print(pca_plot)
+# print a summary of PCA and explained (cumulative) variance per PC
+summary(train_call.pca)
