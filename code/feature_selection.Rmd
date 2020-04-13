@@ -102,6 +102,7 @@ copy_number_events_plot
 ```
 
 ```{r}
+########## importance of features
 # extract clinical outcomes of samples
 train_call <- attach_clinical_labels(train_call, train_clinical)
 clinical_outcomes <- as.factor(train_call$Subgroup)
@@ -113,6 +114,7 @@ filter_variance_importances$mean <- apply(filter_variance_importances, 1, mean)
 # sort features by importance
 filter_variance_importances <- filter_variance_importances[order(-filter_variance_importances$mean),]
 
+########## visualization of most important features
 # plot copy number patterns of clinical subgroups for top 30 important features
 train_call <- attach_clinical_labels(train_call, train_clinical)
 for (feature in row.names(filter_variance_importances)[1:30]) {
@@ -123,41 +125,48 @@ train_call <- detach_clinical_labels(train_call)
 
 Some concluding remarks on these features, the following should be considered as putative clinically discriminative features: 2185, 2222, 855, 853, 850, 1657, 856, 1673, 674, 852, 2057, 849. This consideration arises from the phenomena where at least one subgroup displays a unique pattern, e.g. only HER2+ has 2 or HR+ has no loss.
 
-```{r}
-# apply Pearson's chi-squared test to each feature
-for (feature in colnames(train_call)){
-  # extract feature data
-  feature_data <- train_call[feature]
-  # attach clinical labels
-  feature_data <- attach_clinical_labels(feature_data, train_clinical)
-  # tally counts of all copy number-subgroup combinations
-  feature_tally <- group_by(feature_data, !! sym(feature), Subgroup) %>% tally(name = 'count')
-  print(feature)
-  print(feature_tally)
-      #feature_contingency_table <- xtabs(count~Subgroup+feature, data = feature_tally)
-}
+```{r warning=FALSE}
+chi_squared <- list()
+chi_squared_simulated <- list()
 
-tmp <- train_call[2185]
-tmp <- attach_clinical_labels(tmp, train_clinical)
-tmp_cont <- group_by(tmp, `2185`, Subgroup) %>% tally(name = 'count')
-tmp_tabs <- xtabs(count~Subgroup+`2185`, data = tmp_cont)
-chisq.test(tmp_tabs, simulate.p.value = TRUE)
-# for each feature f
-  # construct a contingency table according to:
-  # tmp %>% group_by(`2185`, Subgroup) %>% tally()
-  #             copy number
-  #   subgroup  -1   0   1   2
+########## Pearson's chi-squared test for individual features
+  #             COPY NUMBER
+  #   SUBGROUP  -1   0   1   2
   # HER2+       x    x   x   x  
   # HR+         x    x   x   x
   # TN          x    x   x   x
-  #
-  # perform Pearson chi-squared test
-  #
-  # store htest objects as variables in a chi-squared results object
-  # 
-  # construct table with features as rows, and columns P-value, sign_0.05 and sign_bonf
-  #
-  # test significance both with default 5% cut-off value and Bonferroni correction of 0.05 / 2834.
+for (feature in colnames(train_call)){
+  # extract feature data
+  feature_data <- train_call[feature]
+  colnames(feature_data) <- 'copy_number'
+  # attach clinical labels
+  feature_data <- attach_clinical_labels(feature_data, train_clinical)
+  # tally counts of all copy number-subgroup combinations
+  feature_tally <- group_by(feature_data, copy_number, Subgroup) %>% tally(name = 'count')
+  # construct contigency table
+  feature_contingency_table <- xtabs(count~Subgroup+copy_number, data = feature_tally)
+  # perform Pearson's chi-squared test
+  chi_squared[[feature]] <- chisq.test(feature_contingency_table)
+  chi_squared_simulated[[feature]] <- chisq.test(feature_contingency_table, simulate.p.value = TRUE)
+}
+
+########## processing the significance of Pearson's chi-squared test results
+# set significance thresholds
+default_sign_threshold <- 0.05
+bonferroni_sign_threshold <- 0.05 / length(train_call)
+
+# process P-values for chi-squared tests WITHOUT simulations
+chi_squared.results <- data.frame(P_value = sapply(chi_squared, function(x) x$p.value), P_value_bonferroni = sapply(chi_squared, function(x) x$p.value / length(train_call)))
+chi_squared.significance <- data.frame(default = sapply(chi_squared.results$P_value, function(x) x < default_sign_threshold), bonferroni = sapply(chi_squared.results$P_value_bonferroni, function(x) x < bonferroni_sign_threshold))
+
+# process P-values for chi-squared tests WITH simulations
+chi_squared_simulated.results <- data.frame(P_value = sapply(chi_squared_simulated, function(x) x$p.value), P_value_bonferroni = sapply(chi_squared_simulated, function(x) x$p.value / length(train_call)))
+chi_squared_simulated.significance <- data.frame(default = sapply(chi_squared_simulated.results$P_value, function(x) x < default_sign_threshold), bonferroni = sapply(chi_squared_simulated.results$P_value_bonferroni, function(x) x < bonferroni_sign_threshold))
+
+########## interpretation of chi-squared test results
+  # TO-DO: extract the top features
+  # TO-DO: compare top features to previous results
+  # TO-DO: possibly investigate novel features
 ```
 
 
