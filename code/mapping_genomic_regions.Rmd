@@ -1,0 +1,57 @@
+---
+title: "Mapping Genomic Regions"
+author: "Koen Rademaker"
+date: "30 April 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '../')
+```
+
+The dataset consists of 100 array Comparative Genomic Hybridization (aCGH) samples measured over 2834 genomic regions. Genomic regions were mapped to human reference genome 18 (hg18 / NCBI36) with Ensembl 54 (May 2009, http://may2009.archive.ensembl.org/)
+
+### Load required packages, set global variables
+```{r message=FALSE}
+library(biomaRt)
+library(tidyr)
+library(dplyr)
+root_dir = getwd()
+```
+
+### Set up connection to Ensembl services
+```{r}
+mart = useMart('ensembl',
+               host = 'http://may2009.archive.ensembl.org',
+               dataset = 'hsapiens_gene_ensembl')
+```
+
+### Loading the aCGH dataset
+```{r}
+train_call <- as_tibble(read.delim(file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep = '\t'))
+genomic_regions <- train_call %>% dplyr::select(Chromosome, Start, End) %>% mutate(region_ID = row_number(), formatted = paste(Chromosome, Start, End, sep = ':'))
+
+head(genomic_regions)
+```
+
+### Map genomic regions to genes
+```{r}
+mapped_genes <- list()
+
+map_genomic_regions_to_genes <- function(x){
+  coordinates <- x[[5]]
+  region <- x[[4]]
+  genes <- getBM(attributes = c('ensembl_gene_id'),
+                 filters = c('chromosomal_region'),
+                 values = coordinates,
+                 mart = mart, useCache = FALSE)
+  
+  mapped_genes[[region]] <- genes$ensembl_gene_id
+}
+
+mapped_genes <-apply(genomic_regions, 1, map_genomic_regions_to_genes)
+
+# convert nested list to tibble
+# each list element will become a column
+```
