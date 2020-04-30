@@ -1,0 +1,146 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+First we will make a dataframe of the files and transpose the data so the samples are depicted on the rows and the chromosomal regions on the columns.
+
+```{r}
+
+### Install packages
+library("plotly")
+library("ggplot2")
+library("ggdendro")
+library("reshape2")
+library("grid")
+
+#Dataframe with the chromosal region information (rows = samples columns = chromosomal regions (colnames_call), value = 2 (amplification), 1(gain), -1 (loss)
+train_call_1 <- read.table("Train_call.txt", header=TRUE, sep="\t")
+colnames_call <- t(as.matrix(train_call_1[,1:4]))
+train_call <- t(as.matrix(train_call_1[,5:104]))
+
+#Dataframe with clinical data (rows = samples, column = subgroup, value = HER2+, HR+ or Triple neg)
+train_clinical <- read.table("Train_clinical.txt", header=TRUE, sep="\t")
+row.names(train_clinical) <- train_clinical[,1]
+train_clinical$Sample <- NULL
+
+
+train_all <- merge(train_clinical, train_call, by="row.names")
+rownames(train_all) <- train_all$Row.names
+colnames(train_all)[1] <- "SampleID"
+
+train_all_sorted <- train_all[order(train_all$Subgroup),]
+train_call_clinical <- as.matrix(sapply(train_all_sorted[,3:2836], as.numeric))
+rownames(train_call_clinical) <- train_all_sorted[,1]
+colnames(train_call_clinical) <- rownames(train_call_1)
+
+#Make a dataframe where all values are in one column
+train.long <- melt(train_call_clinical)
+train.Y <- as.numeric(train_all_sorted$Subgroup)
+
+colnames(train.long) <- c("SampleID", "Region", "value")
+
+#Heatmap of chromosomal regions vs arrays
+heatmap.plot <- ggplot(data = train.long, aes(x = Region, y = SampleID)) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_gradient2() +
+  theme(axis.text.y = element_text(size = 5)) +
+  theme(axis.text.y = element_text(colour = train.Y))+
+  theme(axis.text.x = element_text(size = 1))
+print(heatmap.plot)
+
+```
+
+Firstly, a heatmap was constructed which depicts the samples ordered by subtype (HER2+ equals green, HR+ equals red and Triple Negative equals black) with their corresponding chromosomal copy number profile over the x-axis. As can be observed there are no initial obvious regions discriminating the three subtypes, indicating additional feature selection is advised to train our classifier.
+
+Clustering the data
+
+```{r}
+library("ggplot2")
+library("ggdendro")
+library("reshape2")
+library("grid")
+library("cluster")
+library("fossil")
+library("kohonen") 
+
+subgroups <- as.numeric(train_all$Subgroup)
+data <- train_all[,3:2836]
+
+#K-medoids clustering
+data.Euc <- pam(data,3,diss = FALSE)
+table(data.Euc$cluster,train_all$Subgroup)
+rand.index(data.Euc$cluster,subgroups)
+adj.rand.index(data.Euc$cluster,subgroups)
+
+#Cosine distance clustering
+CosDist = function(data){
+   data = as.matrix(data)
+   Cos.Sim = data / sqrt(rowSums(data * data))
+   Cos.Sim = Cos.Sim %*% t(Cos.Sim)
+   return(Cos.Dist = 1 - Cos.Sim)
+ }
+Cos_data = CosDist(data)
+data.Cos <- pam(Cos_data,3,diss = TRUE)
+table(data.Cos$cluster,train_all$Subgroup)
+rand.index(data.Cos$cluster,subgroups)
+adj.rand.index(data.Cos$cluster,subgroups)
+
+#Hierarchical clustering
+dist_data <- dist(data,method = "euclidean")
+hc_data <- hclust(dist_data, method = "average")
+
+clusterCut <- cutree(hc_data, 12)
+table(clusterCut, train_all$Subgroup)
+rand.index(clusterCut,subgroups)
+adj.rand.index(clusterCut,subgroups)
+
+#Dendrogram of hierarchical clustering
+call.dendro <- as.dendrogram(hc_data)
+call.dendro_data <- dendro_data(call.dendro, type = "rectangle")
+order.dend <- order.dendrogram(call.dendro)
+
+call.new <- as.matrix(sapply(train_all_sorted[,3:2836], as.numeric))
+rownames(call.new) <- train_all_sorted[,1]
+colnames(call.new) <- rownames(train_call_1)
+call.new <- cbind(call.new, train_all_sorted$Subgroup)
+call.new <- call.new[order.dend,]
+
+call.order.subgroups <- call.new[,2835]
+
+dend_call.plot <- ggplot(call.dendro_data$segments) +
+  geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_text(data = call.dendro_data$labels, aes(x, y, label = label, colour = call.order.subgroups), hjust = 1, angle = 90, size = 2) +
+  ylim(-10, 80)
+print(dend_call.plot)
+
+dendro.plot <- ggdendrogram(data = call.dendro, rotate = TRUE, labels = TRUE, theme_dendro = FALSE)
+
+
+###Self-organising map
+#Settings for the amount of grid-cells (c1xc2)
+c1 = 5
+c2 = 6
+
+#Create a object with the self organising map components
+datamap <- som(as.matrix(data), grid = somgrid(c1, c2, "hexagonal"), rlen=800)
+
+#Plot the training error
+plot(datamap, type="changes")
+
+#Amount of samples per grid
+counts <- plot(datamap, type="counts", shape = "straight")
+
+#Distances between the profiles of the grid
+distance.plot <- plot(datamap, type="dist.neighb")
+
+#Quality-map of the mean distance of all samples in the corresponding grid cell
+similarities <- plot(datamap, type="quality", palette.name = terrain.colors)
+plot(datamap, type = "mapping",labels = train_all$Subgroup, col = as.integer(subgroups),main = "mapping plot")
+
+```
+
