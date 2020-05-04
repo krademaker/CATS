@@ -37,20 +37,22 @@ head(genomic_regions)
 
 ### Map genomic regions to genes
 ```{r}
-mapped_genes <- list()
-
-map_genomic_regions_to_genes <- function(x){
-  coordinates <- x[[5]]
-  region <- x[[4]]
-  genes <- getBM(attributes = c('ensembl_gene_id'),
+map_genomic_regions_to_genes <- function(genomic_region, target_attribute = 'ensembl_gene_id'){
+  coordinates <- genomic_region[[5]]
+  region <- genomic_region[[4]]
+  
+  genes <- getBM(attributes = c(target_attribute),
                  filters = c('chromosomal_region'),
                  values = coordinates,
                  mart = mart, useCache = FALSE)
   
-  mapped_genes[[region]] <- genes$ensembl_gene_id
+  return(genes[[target_attribute]])
 }
 
-mapped_genes <-apply(genomic_regions, 1, map_genomic_regions_to_genes)
+# MAP GENOMIC REGIONS TO ENSEMBL GENE IDs
+mapped_ensembl_genes <-apply(genomic_regions, 1, map_genomic_regions_to_genes)
+# MAP GENOMIC REGIONS TO HGNC GENE SYMBOLS
+mapped_hgnc_genes <- apply(genomic_regions, 1, map_genomic_regions_to_genes, target_attribute = 'hgnc_symbol')
 
 # convert nested list to tibble
 # each list element will become a column
