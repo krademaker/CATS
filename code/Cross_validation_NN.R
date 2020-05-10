@@ -148,35 +148,40 @@ prediction <- function(training, test, features) {
 pred_nn <- function(z, test){
   
   set.seed(444)
-  nnetGrid <- expand.grid(decay = c(0.1, 0.01, 0.001),  size = c(5:7))
-  maxSize <- max(nnetGrid$size)
-
   ctrl <- trainControl(method = "cv",  # corss-validation
-                       number = 3,  # 3 folds
-                       classProbs = FALSE , # report class probability
-                       
+                       number = 3,  # 10 folds
+                       classProbs = FALSE , # report class probability)
   )
-  
+  nnetGrid <- expand.grid(decay = c(0.1),  size = c(5))
+  maxSize <- max(nnetGrid$size)
   xx <- data.frame(subset(z, select = -c(Subgroup)))
   xxt <- data.frame(subset(test, select = -c(Subgroup)))
+  
+  mml <- as.list("312", "328", "347", "2778", "2779", "2782", "2783", "2784", "2785", "2786")
+  for (c in mml){
+    xx[,c] <- NULL
+    xxt[,c] <- NULL}
+  
   numWts <- 1*(maxSize * (length(xx) + 1) + maxSize + 1)
+  print("NN working")
   n <- train(xx, z$Subgroup,
              method = "nnet", # train neural network using `nnet` 
              tuneGrid = nnetGrid, # tuning grid
-             trControl = ctrl, # process customization set before
-             preProc = c("center", "scale"), # standardize data
+             #preProc = c("scale"), # standardize data
              trace = FALSE,  # hide the training trace
-             MaxNWts = numWts,
+             #trControl = ctrl,
+             MaxNWts = 2658,
              maxit = 100 # maximum iteration)
   )
+  print(n)
   op <- predict(n, newdata = xxt) 
-  
+    
   return(list('predictions'=op, 'test'=test))
              
   
 }
 #####Start program
-final_accuracy <- c()
+
 final_accuracy_nn <- c()
 ### Most outer loop - divide the training & validation set
 #For a 10-fold CV
@@ -187,9 +192,7 @@ for (k in 1:cv_fold_outer) {
   
   training_set <- training_test_set[[1]]
   test_set <- training_test_set[[2]]
-  
-  average_list = list()
-  feature_list = list(feature=list())
+
   
   average_list_nn = list()
   feature_list_nn = list(feature=list())
@@ -207,58 +210,54 @@ for (k in 1:cv_fold_outer) {
     #Define control (random selection)
     #Insert feature selection method
     feature_selection.results <- features.chi_squared(subset(training_set.feature, select = -c(Subgroup)), subset(training_set.feature, select = c(Subgroup)))
-    Tboruta <- features.boruta(training_set.feature)
-    feature_selection.boruta_train <- training_set.feature[Tboruta$finalDecision == "Confirmed"]
-    feature_selection.boruta_train$Subgroup <- training_set.feature$Subgroup
+    feature_selection.chi_train <- select(training_set.feature, feature_selection.results)
+    feature_selection.chi_test <- select(test_set.feature, feature_selection.results)
+    feature_selection.chi_train$Subgroup <- training_set.feature$Subgroup
+    feature_selection.chi_test$Subgroup <- test_set.feature$Subgroup
     
-    feature_selection.boruta_test <- test_set.feature[Tboruta$finalDecision == "Confirmed"]
-    feature_selection.boruta_test$Subgroup <- test_set.feature$Subgroup
+    
+    #Tboruta <- features.boruta(training_set.feature)
+    #feature_selection.boruta_train <- training_set.feature[Tboruta$finalDecision == "Confirmed"]
+    #feature_selection.boruta_train$Subgroup <- training_set.feature$Subgroup
+    
+    #feature_selection.boruta_test <- test_set.feature[Tboruta$finalDecision == "Confirmed"]
+    #feature_selection.boruta_test$Subgroup <- test_set.feature$Subgroup
 
     #Accuracy values of fecature selection
-    total_accuracy = c()
     total_accuracy_nn = c()
     
-    for (j in 1:10){
-      model = prediction(training_set.feature, test_set.feature, feature_selection.results)
-      nn_model = pred_nn(feature_selection.boruta_train, feature_selection.boruta_test)
-      #Evaluate performance
-      score = CrossTable(test_set.feature$Subgroup, model$predictions, prop.chisq = FALSE)
-      acc = accuracy(score)
-      
+    for (j in 1:5){
+      print(k,i,j)
+      nn_model = pred_nn(feature_selection.chi_train, feature_selection.chi_test)
+      print("NN finished")
       #Evaluate performance Neural Network
       score_nn = CrossTable(test_set.feature$Subgroup, nn_model$predictions, prop.chisq = FALSE)
       acc_nn = accuracy(score_nn)
       
-      #Append to the vector that represents the total accuracy
-      total_accuracy <- c(total_accuracy, acc)
-      
+
       #Append to the vector that represents the total accuracy Neural Network
       total_accuracy_nn <- c(total_accuracy_nn, acc_nn)
     }
     #Mean of the accuracy
-    mean.acc <- mean(total_accuracy, na.rm = TRUE)
     mean.acc_nn <- mean(total_accuracy_nn, na.rm = TRUE) 
     
     #Append the average of accuracy and corresponding features to lists
-    average_list[i] <- mean.acc
-    feature_list$feature[[i]] <- feature_selection.results
+    average_list[i] <- mean.acc_nn
+    #feature_list$feature[[i]] <- feature_selection
     
   }
   avgs_vector <- unlist(average_list)
   top_index <- which.max(avgs_vector)
   top_features <- feature_list$feature[[top_index]]
   
-  model = prediction(training_set, test_set, top_features)
+
   nn_model = pred_nn(training_set, test_set)
-  score = CrossTable(test_set$Subgroup, model$predictions, prop.chisq = FALSE)
-  acc = accuracy(score)
-  final_accuracy <- c(final_accuracy, acc)
+
   
   score_nn = CrossTable(test_set$Subgroup, nn_model$predictions, prop.chisq = FALSE)
   acc_nn = accuracy(score_nn)
   final_accuracy_nn <- c(final_accuracy_nn, acc_nn)
 }
-mean(final_accuracy, na.rm = TRUE)
 mean(final_accuracy_nn, na.rm = TRUE)
 ```
 
