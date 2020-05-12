@@ -179,13 +179,14 @@ pred_nn <- function(training_set, test_set, decay = "", size = ""){
   print(model.nn)
   predictions.nn <- predict(model.nn, newdata = test_set.data) 
     
-  return(list('predictions'=predictions.nn, 'test'=test_set, 'model'=n, 'size' = model.nn$size, 'decay' = model.nn$decay))
+  return(list('predictions'=predictions.nn, 'test'=test_set, 'model'=model.nn))
 }
 #####Start program
 
 
 final_accuracy_nn <- list()
 final_performance_list = list(sensitivitiy=list(), specificity=list(), recall=list(), f1=list())
+model_list <- list()
 
 ### Most outer loop - divide the training & validation set
 #For a 10-fold CV
@@ -247,8 +248,8 @@ for (k in 1:cv_fold_outer) {
     feature_list_nn$feature[[i]] <- features.boruta_train
     
     #Store hyperparameters in list
-    hyperparameters_list$size[[i]] <- nn_model$size
-    hyperparameters_list$decay[[i]] <- nn_model$decay
+    hyperparameters_list$size[[i]] <- nn_model$bestTune$size
+    hyperparameters_list$decay[[i]] <- nn_model$bestTune$decay
   }
   avgs_vector <- unlist(accuracy_list_nn)
   top_index <- which.max(avgs_vector)
@@ -272,11 +273,17 @@ for (k in 1:cv_fold_outer) {
   
   #Performance metrics - Precision, Recall, Sensitvity, Specificity per class
   final_performance.df <- as.data.frame(score_nn.inner[["byClass"]])
-  final_performance_list$sensitivity[[i]] <- performance.df$Sensitivity
-  final_performance_list$specificity[[i]] <- performance.df$Specificity
-  final_performance_list$recall[[i]] <- performance.df$Recall
-  final_performance_list$f1[[i]] <- performance.df$F1
+  final_performance_list$sensitivity[[k]] <- performance.df$Sensitivity
+  final_performance_list$specificity[[k]] <- performance.df$Specificity
+  final_performance_list$recall[[k]] <- performance.df$Recall
+  final_performance_list$f1[[k]] <- performance.df$F1
+  
+  #Save the models in a list
+  model_list[k] <- nn_model
 }
+
+best_accuracy_index <- which.max(unlist(final_accuracy_nn))
+best_nn_model <- model_list[best_accuracy_index]
 
 mean(unlist(final_accuracy_nn), na.rm = TRUE)
 
