@@ -157,7 +157,7 @@ pred_nn <- function(training_set, test_set, decay = "", size = ""){
   if (decay == "" | size == ""){
     nnetGrid <- expand.grid(decay = c(0.1, 0.01, 0.001),  size = c(5:7))
   } else {
-    nnetGrid <- expand.grid(decay, size)
+    nnetGrid <- expand.grid(decay = decay, size = size)
   }
   maxSize <- max(nnetGrid$size)
   training_set.data <- data.frame(subset(training_set, select =   -c(Subgroup)))
@@ -175,7 +175,6 @@ pred_nn <- function(training_set, test_set, decay = "", size = ""){
                     MaxNWts = numWts*10,
                     maxit = 100 # maximum iteration
   )
-  plot(model.nn)
   print(model.nn)
   predictions.nn <- predict(model.nn, newdata = test_set.data) 
     
@@ -209,11 +208,10 @@ for (k in 1:cv_fold_outer) {
   ####Inner loop - training
   for (i in 1:cv_fold_inner) {
     #Check progress
-    print(k)
-    print(i)
+    print(paste('outer:', k, ', inner:', i, ', initialzed on:', Sys.time()))
     
     #Set new seed for every iteration
-    set.seed(69+i)
+    set.seed(i*k)
     
     #New training sets for the feature selection from the training set
     training_test_set.feature <- split(training_set, feature_size)
@@ -232,13 +230,13 @@ for (k in 1:cv_fold_outer) {
     
     #Accuracy values of fecature selection
     nn_model = pred_nn(feature_selection.boruta_train, feature_selection.boruta_test)
-    print("NN finished")
+    print(paste('neural network construction finished on', Sys.time()))
     
     #Evaluate overall accuracy for feature selection
     score_nn = confusionMatrix(test_set.feature$Subgroup, nn_model$predictions)
     
     #Evaluate performance per class for feature selection
-    performance.df <- as.data.frame(score_nn.inner[["byClass"]])
+    performance.df <- as.data.frame(score_nn[["byClass"]])
     performance_list$sensitivity[[i]] <- performance.df$Sensitivity
     performance_list$specificity[[i]] <- performance.df$Specificity
     performance_list$recall[[i]] <- performance.df$Recall
@@ -248,8 +246,8 @@ for (k in 1:cv_fold_outer) {
     feature_list_nn$feature[[i]] <- features.boruta_train
     
     #Store hyperparameters in list
-    hyperparameters_list$size[[i]] <- nn_model$bestTune$size
-    hyperparameters_list$decay[[i]] <- nn_model$bestTune$decay
+    hyperparameters_list$size[[i]] <- nn_model$model$bestTune$size
+    hyperparameters_list$decay[[i]] <- nn_model$model$bestTune$decay
   }
   avgs_vector <- unlist(accuracy_list_nn)
   top_index <- which.max(avgs_vector)
@@ -264,7 +262,12 @@ for (k in 1:cv_fold_outer) {
   colnames(test_set)[1] <- 'Subgroup'
   
   #Neural network - outer loop
-  nn_model = pred_nn(training_set, test_set, hyperparameters_list$decay[[top_index]], hyperparameters_list$size[[top_index]])
+  best_size <- unlist(hyperparameters_list$size)[top_index]
+  best_decay <- unlist(hyperparameters_list$decay)[top_index]
+  print(best_size)
+  print(best_decay)
+  
+  nn_model = pred_nn(training_set, test_set, best_decay, best_size)
 
   score_nn.inner = confusionMatrix(test_set$Subgroup, nn_model$predictions)
   #Accuracy
@@ -279,7 +282,9 @@ for (k in 1:cv_fold_outer) {
   final_performance_list$f1[[k]] <- performance.df$F1
   
   #Save the models in a list
-  model_list[k] <- nn_model
+  model_out_path <- paste(root_dir, '/model_', k, '.rds', sep = '')
+  saveRDS(nn_model$model, model_out_path)
+  print(paste('saved model to:', model_out_path, 'on', Sys.time()))
 }
 
 best_accuracy_index <- which.max(unlist(final_accuracy_nn))
