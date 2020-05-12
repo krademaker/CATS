@@ -12,13 +12,13 @@ library(dplyr)
 root_dir = getwd()
 #### Loading the aCGH data
 #Load all the data (log2-scaled of copy number aberations between breast cancer subtypes)
-train_call <- read.delim(file= '/home/saarika/Desktop/ML/Train_call.tsv', header = TRUE, sep='\t')
+train_call <- read.delim(file=file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep='\t')
 train_call$ID <- seq.int(nrow(train_call))
 genomic_regions <- train_call[c('ID','Chromosome','Start','End','Nclone')]
 train_call <- subset(train_call, select = -c(Chromosome,Start,End,Nclone))
 train_call <- as.data.frame(t(subset(train_call, select = -c(ID))))
 #### Clinical data
-train_clinical <- read.delim(file= '/home/saarika/Desktop/ML/Train_clinical.tsv', header=TRUE, sep="\t")
+train_clinical <- read.delim(file=file.path(root_dir, 'data', 'train_clinical.tsv'), header=TRUE, sep="\t")
 row.names(train_clinical) <- train_clinical$Sample
 train_clinical <- train_clinical[,-(1:1), drop=FALSE]
 #### Merged clinical & array data
