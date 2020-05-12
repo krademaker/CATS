@@ -27,22 +27,26 @@ option_specification <- matrix(c(
 # Parse options
 options <- getopt(option_specification);
 
-# Step 1: load the model from the model file (options$model)
+# LOAD MODEL FROM MODEL .RDS FILE (options$model)
 model <- readRDS(options$model)
 
-# Step 2: apply the model to the input file (options$inout) to do the prediction
+# LOAD PREDICTION DATA FROM INPUT FILE (options$input)
 validation_set <- read.delim(options$input, header = TRUE, sep = '\t')
 validation_set <- subset(validation_set, select = -c(Chromosome,Start,End,Nclone))
 validation_set.data <- as.data.frame(t(validation_set))
+colnames(validation_set.data) <- paste('X', colnames(validation_set.data), sep = '')
 validation_set.samples <- row.names(validation_set.data)
 validation_set.sample_size <- nrow(validation_set.data)
-#validation_set.predictions <- predict(model, newdata = validation_set.data)
 
-# Step 3: write the prediction into the desinated output file (options$output)
+# APPLY MODEL TO VALIDATION SET TO DO PREDICTIONS
+validation_set.predictions <- predict(model, newdata = validation_set.data)
+
+# WRITE PREDICTIONS TO OUTPUT FILE (options$output)
 sink(options$output)
 cat('"Sample"\t"Subgroup"', sep = '\n', file = options$output)
-for (s in 1:length(validation_set.sample_size)){
+for (s in 1:validation_set.sample_size){
   cat(paste('"', validation_set.samples[s], '"\t"', validation_set.predictions[s], '"', sep = ''), sep = '\n', file = options$output, append=TRUE)
 }
 sink()
+
 message ("Done!")
