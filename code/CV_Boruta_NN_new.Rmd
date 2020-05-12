@@ -4,17 +4,18 @@
 output: html_notebook
 ---
   
-  #The dataset consist of an aCGH (array comparative genomic hybridization) with 100 samples of three different breast cancer subtypes. The chromosomal copy number abberations have been measured by comparison to regular DNA and from this the specific type of 
+# The dataset consist of an aCGH (array comparative genomic hybridization) with 100 samples of three different breast cancer subtypes. The chromosomal copy number abberations have been measured by comparison to regular DNA and from this the specific type of 
 
 ```{r}
 #### Install packages
 library(tidyr)
 library(dplyr)
+library(here)
 
-root_dir = getwd()
+root_dir = here()
 #### Loading the aCGH data
-#Load all the data (log2-scaled of copy number aberations between breast cancer subtypes)
-train_call <- read.delim(file.path(root_dir,'data', 'Train_call.txt'), header = TRUE, sep='\t')
+# Load all the data (log2-scaled of copy number aberations between breast cancer subtypes)
+train_call <- read.delim(file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep='\t')
 
 train_call$ID <- seq.int(nrow(train_call))
 genomic_regions <- train_call[c('ID','Chromosome','Start','End','Nclone')]
@@ -23,7 +24,7 @@ train_call <- subset(train_call, select = -c(Chromosome,Start,End,Nclone))
 train_call <- as.data.frame(t(subset(train_call, select = -c(ID))))
 
 #### Clinical data
-train_clinical <- read.delim(file.path(root_dir, 'data', "Train_clinical.txt"), header=TRUE, sep="\t")
+train_clinical <- read.delim(file.path(root_dir, 'data', "train_clinical.tsv"), header=TRUE, sep="\t")
 row.names(train_clinical) <- train_clinical$Sample
 train_clinical <- train_clinical[,-(1:1), drop=FALSE]
 
@@ -35,7 +36,7 @@ train_data <- train_data %>% select(Subgroup, everything())
 
 ```
 
-#For this part I will provide a cross-validation scheme. We will first split the data into a test and a training set. The training set will be used to do feature selection and create the model with various classification algorithms.
+# For this part I will provide a cross-validation scheme. We will first split the data into a test and a training set. The training set will be used to do feature selection and create the model with various classification algorithms.
 
 #For the scheme, we will split the data set into a test (for validation of final predictor) and training set (from which we select features and build the classification model). This outer loop will be 10-fold cross-validated
 
@@ -54,7 +55,7 @@ cv_fold_outer <- 10
 training_size_outer <- 0.7
 validation_size_outer <- 1 - training_size_outer
 #Inner loop CV
-cv_fold_features <- 10
+cv_fold_inner <- 10
 feature_size <- 0.7
 #KNN
 k_number = 10
@@ -78,8 +79,8 @@ detach_clinical_labels <- function(df){
   return(df)
 }
 # Split the input data
-split <- function(train, trainingsize){
-  trainIndex <- createDataPartition(train$Subgroup, p = trainingsize)
+split <- function(train, training_size){
+  trainIndex <- createDataPartition(train$Subgroup, p = training_size)
   #Save the sampleIDs with index from partition & filter out the corresponding samples for training
   resample.train <- rownames(train)[trainIndex$Resample1] 
   train_set <- filter(train, rownames(train) %in% resample.train) 
@@ -126,15 +127,13 @@ features.chi_squared <- function(data, clinical_outcome){
   return (features)
 }
 
-features.boruta <- function(z){
-  print('Running Boruta..')
-  boruta <- Boruta(Subgroup~ ., data = z, doTrace = 1, maxRuns = 1000)
-  Tboruta <- TentativeRoughFix(boruta)
-  #k <- z[Tboruta$finalDecision == "Confirmed"]
-  #k$Subgroup <- z$Subgroup
-  #k$Tboruta <- Tboruta
-  return(Tboruta)
+features.boruta <- function(acgh_data){
+  print('Running Boruta...')
+  boruta <- Boruta(Subgroup~ ., data = acgh_data, doTrace = 1, maxRuns = 1000)
+  boruta.tentative_fixed <- TentativeRoughFix(boruta)
+  return(boruta.tentative_fixed)
 }
+
 ####Example with KNN
 prediction <- function(training, test, features) {
   #Select columns with selected features only
@@ -151,7 +150,7 @@ prediction <- function(training, test, features) {
 pred_nn <- function(training_set, test_set, decay = "", size = ""){
   #CV
   ctrl <- trainControl(method = "cv",  # cross-validation
-                       number = 3,  # 10 folds
+                       number = 10,  # 10 folds
                        classProbs = FALSE , # report class probability
   )
   
@@ -163,12 +162,6 @@ pred_nn <- function(training_set, test_set, decay = "", size = ""){
   maxSize <- max(nnetGrid$size)
   training_set.data <- data.frame(subset(training_set, select =   -c(Subgroup)))
   test_set.data <- data.frame(subset(test_set, select = -c(Subgroup)))
-  
-  #Features out otherwise statistical doesnt work
-  #mml <- as.list("312", "328", "347", "2778", "2779", "2782", "2783", "2784", "2785", "2786")
-  #for (c in mml){
-  #  xx[,c] <- NULL
-  #  xxt[,c] <- NULL}
   
   numWts <- 1*(maxSize * (length(training_set.data) + 1) + maxSize + 1)
   print(numWts)
@@ -213,7 +206,7 @@ for (k in 1:cv_fold_outer) {
   hyperparameters_list = list(size=list(), decay=list())
   
   ####Inner loop - training
-  for (i in 1:10) {
+  for (i in 1:cv_fold_inner) {
     #Check progress
     print(k)
     print(i)
