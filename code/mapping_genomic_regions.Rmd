@@ -17,7 +17,8 @@ The dataset consists of 100 array Comparative Genomic Hybridization (aCGH) sampl
 library(biomaRt)
 library(tidyr)
 library(dplyr)
-root_dir = getwd()
+library(here)
+root_dir = here()
 ```
 
 ### Set up connection to Ensembl services
@@ -54,6 +55,9 @@ mapped_ensembl_genes <-apply(genomic_regions, 1, map_genomic_regions_to_genes)
 # MAP GENOMIC REGIONS TO HGNC GENE SYMBOLS
 mapped_hgnc_genes <- apply(genomic_regions, 1, map_genomic_regions_to_genes, target_attribute = 'hgnc_symbol')
 
-# convert nested list to tibble
-# each list element will become a column
+# LOOK UP SPECIFIC GENOMIC REGIONS
+GENOMIC_REGION_ID <- 2185
+
+mapped_ensembl_genes[[GENOMIC_REGION_ID]]
+mapped_hgnc_genes[[GENOMIC_REGION_ID]]
 ```
