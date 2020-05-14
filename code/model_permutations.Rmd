@@ -1,0 +1,191 @@
+---
+title: "Permutation analysis of classification model accuracy (NN, KNN, NSC) on aCGH data for breast cancer"
+author: "Koen Rademaker"
+date: "5/14/2020"
+output: html_document
+---
+
+# Permutations
+
+```{r}
+####################
+root_dir <- here::here()
+# Load CATS settings, global parameters and functions
+source(file.path(root_dir, 'code', 'CATS_functions.R'))
+
+# Define models
+m1 <- readRDS(file.path(root_dir, 'model', 'neural_networks', 'NN_model_5.rds'))
+# m2 <-
+m3 <- readRDS(file.path(root_dir, 'model', 'KNN', 'KNN_model_2.rds'))
+# m4 <-
+m5 <- readRDS(file.path(root_dir, 'model', 'NSC', 'NSC_model_2.rds'))
+# m6 <-
+
+# Define parameters
+N_PERMUTATIONS <- 1000
+models.SUBINDEX_MODEL <- 1
+models.SUBINDEX_TYPE <- 2
+
+### Define functions
+# Get the hyperparameters of a model
+get_hyperparameters <- function(model){
+  hyperparameters <- models[[model]][[models.SUBINDEX_MODEL]]$bestTune
+  return(hyperparameters)
+}
+
+# Get the number of features for a specific model type
+get_n_features <- function(model, model_type){
+  if(model_type == 'neural network'){
+    n_features <- length(models[[model]][[models.SUBINDEX_MODEL]]$finalModel$coefnames)
+  }
+  if(model_type == 'k-nearest neighbors'){
+    n_features <- length(models[[model]][[models.SUBINDEX_MODEL]]$finalModel$xNames)
+  }
+  if(m.type == 'nearest shrunken centroid'){
+    n_features <- length(models[[model]][[models.SUBINDEX_MODEL]]$finalModel$xNames)
+  }
+  return(n_features)
+}
+####################
+
+
+####################
+### Initialize data
+# Load aCGH dataset
+aCGH_call_data <- read.delim(file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep = '\t')
+aCGH_call_data$ID <- seq.int(nrow(aCGH_call_data))
+aCGH_call_data <- subset(aCGH_call_data, select = -c(Chromosome,Start,End,Nclone))
+aCGH_call_data <- as.data.frame(t(subset(aCGH_call_data, select = -c(ID))))
+aCGH_call_data.N_FEATURES <- length(aCGH_call_data)
+
+aCGH_clinical_data <- read.delim(file.path(root_dir, 'data', 'train_clinical.tsv'), header = TRUE, sep = '\t')
+row.names(aCGH_clinical_data) <- aCGH_clinical_data$Sample
+aCGH_clinical_data <- aCGH_clinical_data[,-(1:1), drop=FALSE]
+
+aCGH_data <- merge(aCGH_call_data, aCGH_clinical_data, by = 'row.names')
+rownames(aCGH_data) <- aCGH_data$Row.names
+aCGH_data$Row.names <- NULL
+aCGH_data <- aCGH_data %>% select(Subgroup, everything())
+
+
+# Load models
+models <- list(list(m1, as.factor('neural network')),
+               # list(m2, as.factor('neural network'))
+               list(m3, as.factor('k-nearest neighbors')),
+               # list(m4, as.factor('k-nearest neighbors'))
+               list(m5, as.factor('nearest shrunken centroid'))
+               # list(m6, as.factor('nearest shrunken centroid'))
+               )
+
+# Initialize list for results
+permutations.accuracy <- list(numeric(N_PERMUTATIONS))[rep(1, length(models))]
+
+### Permutations
+# Iterate over models
+for(m in 1:length(models)){
+  # Obtain hyperparameters 'H' and number of features 'n'
+  m.type <- models[[m]][[models.SUBINDEX_TYPE]]
+  m.hyperparameters <- get_hyperparameters(m)
+  m.n_features <- get_n_features(m, m.type)
+  
+  # Run permutations
+  for(p in 1:N_PERMUTATIONS){
+    print(paste('Permutation', p, '/', N_PERMUTATIONS, 'of', models[[m]][[models.SUBINDEX_TYPE]]))
+    # Permute the features
+    permutation.features <- sample(x = c(1:aCGH_call_data.N_FEATURES),
+                                    size = m.n_features,
+                                    replace = TRUE)
+    
+    # Split into training and test set
+    permutation.split <- split_aCGH(aCGH_data, TRAINING_SIZE_OUTER)
+    permutation.aCGH_training <- permutation.split[[1]]
+    permutation.aCGH_test <- permutation.split[[2]]
+    
+    # Select a subset with only the permuted features and subgroups of training data samples
+    permutation.aCGH_training.subset <- permutation.aCGH_training %>% select(permutation.features)
+    permutation.aCGH_training.subset$Subgroup <- permutation.aCGH_training$Subgroup
+    
+    permutation.accuracy <- NA
+    # Neural network
+    if(m.type == 'neural network'){
+      permutation.neural_network <- predict.neural_network(aCGH_training = permutation.aCGH_training.subset,
+                                                           aCGH_test = permutation.aCGH_test,
+                                                           decay = m.hyperparameters$decay,
+                                                           size = m.hyperparameters$size)
+      cm <- confusionMatrix(permutation.aCGH_test$Subgroup, permutation.neural_network$predictions)
+    }
+    # K-nearest neighbors (KNN)
+    if(m.type == 'k-nearest neighbors'){
+      permutation.knn <- predict.knn(aCGH_training = permutation.aCGH_training.subset,
+                                     aCGH_test = permutation.aCGH_test,
+                                     k = m.hyperparameters$k)
+      cm <- confusionMatrix(permutation.aCGH_test$Subgroup, permutation.knn$predictions)
+    }
+    # Nearest-shrunken centroid (NSC)
+    if(m.type == 'nearest shrunken centroid'){
+      permutation.nsc <- predict.nsc(aCGH_training = permutation.aCGH_training.subset,
+                                     aCGH_test = permutation.aCGH_test,
+                                     threshold = m.hyperparameters$threshold)
+      cm <- confusionMatrix(permutation.aCGH_test$Subgroup, permutation.nsc$predictions)
+    }
+    
+    # Store accuracy
+    permutation.accuracy <- cm[['overall']][['Accuracy']]
+    permutations.accuracy[[m]][[p]] <- permutation.accuracy
+  }
+}
+```
+
+# Visualization
+
+```{r}
+permutations.accuracy.tibble <- tibble(m1 = permutations.accuracy[[1]], m3 = permutations.accuracy[[2]], m5 = permutations.accuracy[[3]])
+
+m1.cv_accuracy <- 0.8947368
+m1_plot <- ggplot(permutations.accuracy.tibble, aes(x = m1)) +
+                  geom_histogram(color = 'black', fill = '#619CFF', binwidth = 0.038) +
+                  labs(x = 'Accuracy', y = 'Frequency') +
+                  geom_vline(aes(xintercept = m1.cv_accuracy, color = 'red')) +
+                  scale_x_continuous(breaks = seq(0.0, 1.0, by = 0.1)) +
+                  theme_bw() +
+                  theme(legend.position = 'none') +
+                  xlim(c(0.0, 1.0))
+
+m3.cv_accuracy <- 0.8571429
+m3_plot <- ggplot(permutations.accuracy.tibble, aes(x = m3)) +
+                  geom_histogram(color = 'black', fill = '#619CFF', binwidth = 0.038) +
+                  labs(x = 'Accuracy', y = 'Frequency') +
+                  geom_vline(aes(xintercept = m3.cv_accuracy, color = 'red')) +
+                  scale_x_continuous(breaks = seq(0.0, 1.0, by = 0.1)) +
+                  theme_bw() +
+                  theme(legend.position = 'none') +
+                  xlim(c(0.0, 1.0))
+
+m5.cv_accuracy <- 0.7142857
+m5_plot <- ggplot(permutations.accuracy.tibble, aes(x = m1)) +
+                  geom_histogram(color = 'black', fill = '#619CFF', binwidth = 0.038) +
+                  labs(x = 'Accuracy', y = 'Frequency') +
+                  geom_vline(aes(xintercept = m5.cv_accuracy, color = 'red')) +
+                  scale_x_continuous(breaks = seq(0.0, 1.0, by = 0.1)) +
+                  theme_bw() +
+                  theme(legend.position = 'none') +
+                  xlim(c(0.0, 1.0))
+
+print(m1_plot)
+print(m3_plot)
+print(m5_plot)
+```
+
+# Significance
+
+```{r}
+m1.p_value <- (nrow(subset(permutations.accuracy.tibble, m1 >= m1.cv_accuracy) %>% select(m1)) + 1) / N_PERMUTATIONS
+# m2.p_value <- (nrow(subset(permutations.accuracy.tibble, m2 >= m2.cv_accuracy) %>% select(m2)) + 1) / N_PERMUTATIONS
+
+m3.p_value  <- (nrow(subset(permutations.accuracy.tibble, m3 >= m3.cv_accuracy) %>% select(m3)) + 1) / N_PERMUTATIONS
+# m4.p_value <- (nrow(subset(permutations.accuracy.tibble, m4 >= m4.cv_accuracy) %>% select(m4)) + 1) / N_PERMUTATIONS
+
+m5.p_value  <- (nrow(subset(permutations.accuracy.tibble, m5 >= m5.cv_accuracy) %>% select(m5)) + 1) / N_PERMUTATIONS
+# m6.p_value <- (nrow(subset(permutations.accuracy.tibble, m6 >= m6.cv_accuracy) %>% select(m6)) + 1) / N_PERMUTATIONS
+```
+
