@@ -1,0 +1,369 @@
+---
+title: "CV_Stat_NN"
+author: "Joris Visser"
+date: "13-5-2020"
+output: html_document
+---
+#The dataset consist of an aCGH (array comparative genomic hybridization) with 100 samples of three different breast cancer subtypes. The chromosomal copy number abberations have been measured by comparison to regular DNA and from this the specific type of 
+
+```{r}
+#### Install packages
+library(tidyr)
+library(dplyr)
+
+root_dir = getwd()
+#### Loading the aCGH data
+#Load all the data (log2-scaled of copy number aberations between breast cancer subtypes)
+train_call <- read.delim(file.path(root_dir,'data', 'Train_call.txt'), header = TRUE, sep='\t')
+
+train_call$ID <- seq.int(nrow(train_call))
+genomic_regions <- train_call[c('ID','Chromosome','Start','End','Nclone')]
+
+train_call <- subset(train_call, select = -c(Chromosome,Start,End,Nclone))
+train_call <- as.data.frame(t(subset(train_call, select = -c(ID))))
+
+#### Clinical data
+train_clinical <- read.delim(file.path(root_dir, 'data', "Train_clinical.txt"), header=TRUE, sep="\t")
+row.names(train_clinical) <- train_clinical$Sample
+train_clinical <- train_clinical[,-(1:1), drop=FALSE]
+
+#### Merged clinical & array data
+train_data <- merge(train_call, train_clinical, by='row.names')
+rownames(train_data) <- train_data$Row.names
+train_data$Row.names <- NULL
+train_data <- train_data %>% select(Subgroup, everything())
+
+```
+
+#For this part I will provide a cross-validation scheme. We will first split the data into a test and a training set. The training set will be used to do feature selection and create the model with various classification algorithms.
+
+#For the scheme, we will split the data set into a test (for validation of final predictor) and training set (from which we select features and build the classification model). This outer loop will be 10-fold cross-validated
+
+
+```{r}
+############## Cross-Validation & Model
+### Load packages
+library('class')
+library('gmodels')
+library('caret')
+library('Boruta')
+library('randomForest')
+
+### Parameters
+#Outer loop CV
+cv_fold_outer <- 10
+training_size_outer <- 0.7
+validation_size_outer <- 1 - training_size_outer
+#Inner loop CV
+cv_fold_inner <- 10
+feature_size <- 0.7
+#Variable importance
+threshold.VarImp <- 0.7
+#Statistical-testing
+default_sign_threshold <- 0.001
+
+### Functions
+#Adding clinical labels to other dataframe
+attach_clinical_labels <- function(df_call, df_clinical){
+  tmp_df <- merge(df_call, df_clinical, by = 'row.names')
+  row.names(tmp_df) <- tmp_df$Row.names
+  tmp_df$Row.names <- NULL
+  return(tmp_df)
+}
+
+#Removing clinical labels from dataframe
+detach_clinical_labels <- function(df){
+  df$Subgroup <- NULL
+  return(df)
+}
+
+# Split the input data
+split <- function(train, trainingsize){
+  trainIndex <- createDataPartition(train$Subgroup, p = trainingsize)
+  #Save the sampleIDs with index from partition & filter out the corresponding samples for training
+  resample.train <- rownames(train)[trainIndex$Resample1] 
+  train_set <- filter(train, rownames(train) %in% resample.train) 
+  rownames(train_set) <- resample.train 
+  #Save the sampleIDs with index from partition & filter out the corresponding samples for validation
+  resample.validation <- rownames(train)[-trainIndex$Resample1] 
+  validation_set <- filter(train, rownames(train) %in% resample.validation) 
+  rownames(validation_set) <- resample.validation 
+  return(list(train_set, validation_set))
+}
+
+#Feature selection with Chi-Squared test
+features.chi_squared <- function(data, clinical_outcome){
+  chi_squared <- list()
+  chi_squared_simulated <- list()
+  for (feature in colnames(data)){
+    # Extract feature data
+    feature_data <- data[feature]
+    colnames(feature_data) <- 'copy_number'
+    # Attach clinical labels
+    feature_data <- attach_clinical_labels(feature_data, clinical_outcome)
+    # tally counts of all copy number-subgroup combinations
+    feature_tally <- group_by(feature_data, copy_number, Subgroup) %>% tally(name = 'count')
+    # Construct contigency table
+    feature_contingency_table <- xtabs(count~Subgroup+copy_number, data = feature_tally)
+    # Perform Pearson's chi-squared test
+    chi_squared[[feature]] <- chisq.test(feature_contingency_table, simulate.p.value = TRUE)
+  }
+  # Set bonferroni significance threshold
+  bonferroni_sign_threshold <- default_sign_threshold / length(data)
+  # Perform chi-squared statistical test with Monte Carlo simulations
+  chi_squared.results <- data.frame(P_value = sapply(chi_squared, function(x) x$p.value), P_value_bonferroni = sapply(chi_squared, function(x) x$p.value / length(data)))
+  chi_squared.significance <- data.frame(default = sapply(chi_squared.results$P_value, function(x) x < default_sign_threshold), bonferroni = sapply(chi_squared.results$P_value_bonferroni, function(x) x < bonferroni_sign_threshold))
+  # Selecting the features below the bonferroni significance threshold
+  chi_squared.significance$features <- rownames(chi_squared.significance)
+  features <- as.numeric((filter(chi_squared.significance, chi_squared.significance$bonferroni)$features))
+  return (features)
+}
+
+#Feature selection with Boruta
+features.boruta <- function(training_set){
+  print('Running Boruta..')
+  boruta <- Boruta(Subgroup~ ., data = training_set, doTrace = 1, maxRuns = 1000)
+  Tboruta <- TentativeRoughFix(boruta)
+  #k <- z[Tboruta$finalDecision == "Confirmed"]
+  #k$Subgroup <- z$Subgroup
+  #k$Tboruta <- Tboruta
+  return(Tboruta)
+}
+
+### Prediction function for NC
+pred_nsc <- function(training_set, test_set, threshold = ""){
+    ctrl <- trainControl(method = "cv",  # cross-validation
+                       number = 3,  # 10 folds
+                       classProbs = FALSE , # report class probability
+  )
+  
+  #If threshold is not given, do hyperparameter tuning
+  if (threshold == ""){
+    nscGrid <- expand.grid(threshold = c(1:8))
+  } else {
+    nscGrid <- expand.grid(threshold = threshold) #if threshold is given, use that hyperparameter
+  }
+  
+  #Only use the data, not the subtypes
+  training_set.data <- data.frame(subset(training_set, select =   -c(Subgroup)))
+  test_set.data <- data.frame(subset(test_set, select = -c(Subgroup)))
+  
+  model.nsc <- train(training_set.data, training_set$Subgroup,
+                    method = 'pam',
+                    tuneGrid = nscGrid
+  )
+  print(model.nsc)
+  
+  #Make predictions
+  predictions.nsc <- predict(model.nsc, newdata = test_set.data) 
+    
+  #Return the predictions, testset and the KNN model
+  return(list('predictions'=predictions.nsc, 'test'=test_set, 'model'=model.nsc))
+}
+
+#### Prediction function for KNN
+pred_knn <- function(training_set, test_set, k = ""){
+  ctrl <- trainControl(method = "cv",  # cross-validation
+                       number = 3,  # 10 folds
+                       classProbs = FALSE , # report class probability
+  )
+  
+  #If k is not given, do hyperparameter tuning
+  if (k == ""){
+    knnGrid <- expand.grid(k = c(1:10))
+  } else {
+    knnGrid <- expand.grid(k = k) #if k is given, use that hyperparameter
+  }
+  
+  #Only use the data, not the subtypes
+  training_set.data <- data.frame(subset(training_set, select =   -c(Subgroup)))
+  test_set.data <- data.frame(subset(test_set, select = -c(Subgroup)))
+  
+  model.knn <- train(training_set.data, training_set$Subgroup,
+                    method = 'knn',
+                    tuneGrid = knnGrid
+  )
+  print(model.knn)
+  
+  #Make predictions
+  predictions.knn <- predict(model.knn, newdata = test_set.data) 
+    
+  #Return the predictions, testset and the KNN model
+  return(list('predictions'=predictions.knn, 'test'=test_set, 'model'=model.knn))
+}
+
+### Prediction function for Neural Networks
+pred_nn <- function(training_set, test_set, size = "", decay = ""){
+  #CV
+  ctrl <- trainControl(method = "cv",  # cross-validation
+                       number = 3,  # 10 folds
+                       classProbs = FALSE , # report class probability
+  )
+  
+  if (decay == "" | size == ""){
+    nnetGrid <- expand.grid(decay = c(0.1, 0.01, 0.001),  size = c(5:7))
+  } else {
+    nnetGrid <- expand.grid(decay = c(decay), size = c(size))
+  }
+  maxSize <- max(nnetGrid$size)
+  training_set.data <- data.frame(subset(training_set, select =   -c(Subgroup)))
+  test_set.data <- data.frame(subset(test_set, select = -c(Subgroup)))
+  
+  numWts <- 1*(maxSize * (length(training_set.data) + 1) + maxSize + 1)
+  print("NN working")
+  model.nn <- train(training_set.data, training_set$Subgroup,
+                    method = "nnet", # train neural network using `nnet`
+                    tuneGrid = nnetGrid, # tuning grid
+                    #preProc = c("scale"), # standardize data
+                    trace = FALSE,  # hide the training trace
+                    #trControl = ctrl,
+                    MaxNWts = numWts*10,
+                    maxit = 100 # maximum iteration
+  )
+  print(model.nn)
+  predictions.nn <- predict(model.nn, newdata = test_set.data) 
+    
+  return(list('predictions'=predictions.nn, 'test'=test_set, 'model'=model.nn))
+}
+#####Start program
+final_accuracy <- list()
+final_performance_list = list(sensitivitiy=list(), specificity=list(), recall=list(), f1=list())
+
+### Most outer loop - divide the training & validation set
+#For a 10-fold CV
+for (k in 1:cv_fold_outer) {
+  #Set new seed for every iteration
+  set.seed(k)
+  #Use partition function to split data set into a training & validation set
+  training_test_set <- split(train_data, training_size_outer)
+  training_set <- training_test_set[[1]]
+  test_set <- training_test_set[[2]]
+
+  #Set list to store accuracies, features and other performance metrics
+  accuracy_list = list()
+  feature_list = list(feature=list())
+  performance_list = list(sensitvitiy=list(), specificity=list(), recall=list(), f1=list())
+  
+  #list for hyperparameters
+  hyperparameters_list = list()
+  
+  ####Inner loop - training
+  for (i in 1:cv_fold_inner) {
+    #Check progress
+    print(k)
+    print(i)
+    
+    #Set new seed for every iteration
+    set.seed(69+i)
+    
+    #New training sets for the feature selection from the training set
+    training_test_set.feature <- split(training_set, feature_size)
+    training_set.feature <- training_test_set.feature[[1]]
+    test_set.feature <- training_test_set.feature[[2]]
+    
+    ##REMOVE THE LABELS FROM TRAIN & TEST
+    training_set.feature.data <- training_set.feature %>% select(-Subgroup)
+    test_set.feature.data <- test_set.feature %>% select(-Subgroup)
+    
+    ###Boruta - feature selection
+    #Tboruta <- features.boruta(training_set.feature)
+    #features_selection.results <- Tboruta$finalDecision[Tboruta$finalDecision =="Confirmed"]
+    ##TAKE ONLY THE FEATURES OBTAINED WITH BORUTA FOR TRAIN & TEST AND STORE SELECTED FEATURES INTO AN OBJECT
+    # feature_selection.train <- training_set.feature.data[Tboruta$finalDecision == "Confirmed"]
+    # feature_selection.test <- test_set.feature.data[Tboruta$finalDecision == "Confirmed"]
+    # features <- colnames(feature_selection_train)
+    ##ADD THE LABELS
+    # feature_selection.train$Subgroup <- training_set.feature$Subgroup
+    # feature_selection.test$Subgroup <- test_set.feature$Subgroup
+  
+    ###Statistical-testing Chi-squared
+    feature_selection.results <- features.chi_squared(training_set.feature.data, subset(training_set.feature, select = c(Subgroup)))
+    feature_selection.train <- training_set.feature.data %>% select(feature_selection.results)
+    feature_selection.test <- test_set.feature.data %>% select(feature_selection.results)
+    features <-colnames(feature_selection.train)
+    #Add labels
+    feature_selection.train$Subgroup <- training_set.feature$Subgroup
+    feature_selection.test$Subgroup <- test_set.feature$Subgroup
+    
+    ###Model (CHOOSE WANTED MODEL)
+    ##NNet
+    model.inner = pred_nn(feature_selection.train, feature_selection.test)
+    #KNN
+    # model.inner = pred_knn(feature_selection.train, feature_selection.test)
+    # #NC
+    # model.inner = pred_nsc(feature_selection.train, feature_selection.test)
+    
+    print("Model finished")
+    
+    #Evaluate overall accuracy for feature selection
+    score.inner = confusionMatrix(test_set.feature$Subgroup, model.inner$predictions)
+    
+    #Evaluate performance per class for feature selection
+    performance.df <- as.data.frame(score.inner[["byClass"]])
+    performance_list$sensitivity[[i]] <- performance.df$Sensitivity
+    performance_list$specificity[[i]] <- performance.df$Specificity
+    performance_list$recall[[i]] <- performance.df$Recall
+    performance_list$f1[[i]] <- performance.df$F1
+    #Append the accuracy and corresponding features to lists
+    accuracy_list[i] <- score.inner[["overall"]][["Accuracy"]]
+    feature_list$feature[[i]] <- features
+    
+    ###Store hyperparameters in list (CHOOSE HYPERPARAMETERS RIGHT MODEL)
+    ##NNet
+    hyperparameters_list$size[[i]] <- model.inner$model$bestTune$size
+    hyperparameters_list$decay[[i]] <- model.inner$model$bestTune$decay
+    #KNN
+    # hyperparameters_list$k[[i]] <- model.inner$model$bestTune$k
+    # #NC
+    # hyperparameters_list$threshold[[i]] <- model.inner$model$bestTune$threshold
+  }
+  avgs_vector <- unlist(accuracy_list)
+  top_index <- which.max(avgs_vector)
+  top_features <- feature_list$feature[[top_index]]
+  
+  training.features <- training_set[,top_features]
+  test.features <- test_set[,top_features]
+  
+  training_set.features <- cbind(training_set$Subgroup, training.features)
+  test_set.features <- cbind(test_set$Subgroup, test.features)
+  colnames(training_set.features)[1] <- 'Subgroup'
+  colnames(test_set.features)[1] <- 'Subgroup'
+  
+  ###NNet
+  best_size <- unlist(hyperparameters_list$size)[top_index]
+  best_decay <- unlist(hyperparameters_list$decay)[top_index]
+  model.outer = pred_nn(training_set.features, test_set.features, best_size, best_decay)
+  #Save the models in a list
+  saveRDS(model.outer$model, paste(root_dir, '/NNetmodel_', k, '.rds', sep=''))
+  
+  ##KNN
+  # best_k <- unlist(hyperparameters_list$k)[top_index]
+  # model.outer = pred_knn(training_set.features, test_set.features, best_k)
+  # #Save the models in a list
+  # saveRDS(model.outer$model, paste(root_dir, '/KNNmodel_', k, '.rds', sep=''))
+
+  # ###NC
+  # best_threshold <- unlist(hyperparameters_list$threshold)[top_index]
+  # model.outer = pred_nsc(training_set.features, test_set.features, best_threshold)
+  # #Save the models in a list
+  # saveRDS(model.outer$model, paste(root_dir, '/NSCmodel_', k, '.rds', sep=''))
+  
+  score.outer = confusionMatrix(test_set$Subgroup, model.outer$predictions)
+  #Accuracy
+  acc = score.outer[["overall"]][["Accuracy"]]
+  final_accuracy[k] <- acc
+  
+  #Performance metrics - Precision, Recall, Sensitvity, Specificity per class
+  final_performance.df <- as.data.frame(score.outer[["byClass"]])
+  final_performance_list$sensitivity[[k]] <- final_performance.df$Sensitivity
+  final_performance_list$specificity[[k]] <- final_performance.df$Specificity
+  final_performance_list$recall[[k]] <- final_performance.df$Recall
+  final_performance_list$f1[[k]] <- final_performance.df$F1
+}
+
+best_model_number <- which.max(unlist(final_accuracy))
+mean(unlist(final_accuracy), na.rm = TRUE)
+
+```
+
+
