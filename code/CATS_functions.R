@@ -1,5 +1,5 @@
 ########## LIBRARIES
-# install.packages(c('readxl', 'tidyverse', 'ggplot2', 'kableExtra'), dependencies=TRUE)
+# install.packages(c('tidyr', 'dplyr', 'here', 'class', 'gmodels', 'caret', 'Boruta', 'randomForest', 'ggplot2', 'tibble','plotly', 'ggdendro', 'reshape2', 'grid', 'cluster', 'fossil', 'kohonen', 'heatmaply', 'ggcorrplot', 'biomaRt', 'ggpubr', 'plyr', 'kableExtra'), dependencies=TRUE)
 
 #### Load packages
 library('tidyr')
