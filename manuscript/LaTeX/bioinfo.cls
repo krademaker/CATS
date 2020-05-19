@@ -259,12 +259,12 @@
   {%
   \def\@oddfoot{{
         \hbox to \textwidth{\helvetica
-        \fontsize{7}{9}\fontshape{n}\selectfont \copyright\space The Author \@copyrightyear. Published by Oxford University Press. All rights reserved. For permissions, please e-mail: journals.permissions@oup.com%
+        \fontsize{7}{9}\fontshape{n}\selectfont %
           \hfill\small\helveticabold\thepage}%
         }}%
   \def\@evenfoot{{
         \hbox to \textwidth{\helvetica\thepage\hfill
-          \fontsize{7}{9}\fontshape{n}\selectfont The Author \@copyrightyear. Published by Oxford University Press. All rights reserved. For permissions, please e-mail: journals.permissions@oup.com}%
+          \fontsize{7}{9}\fontshape{n}\selectfont }%
         }}%
   \let\@evenhead\relax
   \let\@oddhead\relax}
@@ -482,8 +482,8 @@
   \vspace*{\aboveskipchk}%
   \vspace{\dropfromtop}%
   \hbox to \textwidth{\raisebox{5pt}[0pt]{%
-  \parbox[b]{415pt}{\raggedleft{\helveticacnitalic\fontsize{8}{12}\selectfont {Bioinformatics}}\\[1pt]
-  {\helveticacn doi.10.1093/bioinformatics/xxxxxx}\\[1pt]
+  \parbox[b]{415pt}{\raggedleft{\helveticacnitalic\fontsize{8}{12}\selectfont {Vrije Universiteit Amsterdam}}\\[1pt]
+  {\helveticacn Faculty of Science}\\[1pt]
   {\ifx\@access\@empty
   \else
   {\helveticacn \@access}\fi}
@@ -498,7 +498,7 @@
 %        Vol. 00\ no. 00 \@pubyear\\
 %        \hfill Pages \thepagerange
 %  }
-  \hfill\includegraphics{OUP_First_SBk_Bot_8401.eps}}
+  \hfill\includegraphics{CATS assignment/final-paper/cabios-template/images/vu_logo.png}}
   \vskip2pt
   \rule{415pt}{2\p@}\par%
   \helvetica

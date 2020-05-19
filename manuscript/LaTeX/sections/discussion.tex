@@ -1,0 +1,30 @@
+\section{Discussion}
+
+
+% ISSUES (WILL)
+    % algorithm-specific there might be more avenues to explore, neural networks can be highly modified with specific functions, layers etc., while at the same time the advice from the (?) paper should be kept in mind that so-called 'simple' methods can be sufficient for these tasks
+        % are there other algos to try?
+    % not only NNs have more options to explore (model-wise), there are also plenty of methods that havent been benchmarked here, 
+    Potential issues with our methodology that could have affected our results include that we have only tested a limited number of classification methods. In particular there are many other types of neural network classifiers besides our SLFN model that may prove to be better-suited to classifying breast cancer subgroups using CNA data. To that end, ensemble classifiers have been experimentally proven to give better accuracy than individual classifiers on most datasets (\citealp{hsieh2012}). Testing an ensemble machine learning model with simple classification algorithms on such data could form the basis of future research. 
+    
+            
+    % do we have references on the previously-reported challenges of  identifying triple negative patients?
+            % look up in lecture 1 of CATS
+            % https://www.ncbi.nlm.nih.gov/pubmed/27184417
+            % reflect on the model performances (overall worst-performing subgroup)
+    Another complicating factor in our three-way classification is that some subgroups are more difficult to identify than others.  In particular, the triple negative subgroup is known to be very difficult to identify (\citealp{Bianchini2016}) . Our results follow similar trends, as we observe that the classifier performs less on the triple negative breast cancer subgroup (Table \ref{Tab:01}.). 
+            
+    % patients are from (?)-stage, we might miss what mutations (A) originated first and are thus disease/subgroup specific and (B) which are the consequence of genomic instability in tumors
+    Additionally, we cannot distinguish in the dataset between driver mutations \& aberrations and those that have arisen in the already-formed tumour. This could potentially introduce residual noise into the classifier. In a more general sense, the availability of 100 tumour samples could be limiting the classification performance. With a larger number of samples, the molecular signature of triple negative samples could potentially be exposed and thus classified. In addition, it could possibly detect previously characterized heterogeneity within the HER2+ subgroup.
+% BIOMARKER
+    A subregion of chromosome 17q12 was found to display a characteristic amplification pattern in HER2+ patients that allowed for the complete discrimination of this subgroup against others. Biological factors underpinning the HER2+ subgroup were found in the \textit{HER2} gene and amplicon. Altogether this region provided an accurate biomarker for HER2+ patients.
+    
+% RESEARCH QUESTION (?)
+    % decide on the final research question that we will use
+    % answer it in detail, yet limited to 1-2 sentences in total.
+    Regarding the research question, the potential of CNA patterns for classification of breast cancer subgroups has partially been achieved. For HER2+ a biomarker was identified that completely discriminated this subgroup from other subgroups, whereas similar specific biomarkers for the other subgroups were not found. The second part involved the effect of a statistical filter method, Pearson's chi-squared test and random forest-based wrapper method, Boruta. Boruta outperformed the chi-squared test in all neural networks and KNNs. According to previous research, random forest-based classifiers are more robust against increased error due to a large number of noisy features (\cite{Fortino2014}).
+
+% IMPACT
+    % HER2+ patients
+    It is clear that our classifier distinguishes the HER2+ subgroup from HR+ and triple negative with high precision.  Our classifier could therefore aid the speed and accuracy of HER2+ diagnosis in particular. Further elucidation of chromosomal aberration patterns specific to HR+ and triple negative subgroups are still needed to improve the classification of these subgroups, which could potentially speed up the access to personalized treatments for these patients.
+    % check for similar things in similar papers (van 't Broek 2018 on aCGH?)
