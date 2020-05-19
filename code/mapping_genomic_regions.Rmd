@@ -14,11 +14,8 @@ The dataset consists of 100 array Comparative Genomic Hybridization (aCGH) sampl
 
 ### Load required packages, set global variables
 ```{r message=FALSE}
-library(biomaRt)
-library(tidyr)
-library(dplyr)
-library(here)
-root_dir = here()
+ROOT_DIR = here::here()
+source(file.path(ROOT_DIR, 'code', 'CATS_functions.R'))
 ```
 
 ### Set up connection to Ensembl services
@@ -30,7 +27,7 @@ mart = useMart('ensembl',
 
 ### Loading the aCGH dataset
 ```{r}
-train_call <- as_tibble(read.delim(file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep = '\t'))
+train_call <- as_tibble(read.delim(file.path(ROOT_DIR, 'data', 'train_call.tsv'), header = TRUE, sep = '\t'))
 genomic_regions <- train_call %>% dplyr::select(Chromosome, Start, End) %>% mutate(region_ID = row_number(), formatted = paste(Chromosome, Start, End, sep = ':'))
 
 head(genomic_regions)

@@ -1,0 +1,139 @@
+---
+title: 'CATS-Cross-Validation'
+output: html_notebook
+---
+
+```{r}
+#### Set root directory & load functions
+ROOT_DIR = here::here()
+source(file.path(root_dir, 'code', 'CATS_functions.R'))
+
+#### Loading the aCGH data
+# Load all the data (log2-scaled of copy number aberations between breast cancer subtypes)
+train_call <- read.delim(file.path(ROOT_DIR, 'data', 'Train_call.txt'), header = TRUE, sep = '\t')
+train_call$ID <- seq.int(nrow(train_call))
+genomic_regions <- train_call[c('ID', 'Chromosome', 'Start', 'End', 'Nclone')]
+train_call <- subset(train_call, select = -c(Chromosome,Start,End,Nclone))
+train_call <- as.data.frame(t(subset(train_call, select = -c(ID))))
+
+#### Loading clinical data
+train_clinical <- read.delim(file.path(ROOT_DIR, 'data', 'Train_clinical.txt'), header = TRUE, sep = '\t')
+row.names(train_clinical) <- train_clinical$Sample
+train_clinical <- train_clinical[,-(1:1), drop=FALSE]
+
+#### Merged clinical & array data
+train_data <- merge(train_call, train_clinical, by = 'row.names')
+rownames(train_data) <- train_data$Row.names
+train_data$Row.names <- NULL
+train_data <- train_data %>% select(Subgroup, everything())
+```
+
+# The cross-validation scheme consists of an outer loop with 10-fold stratified cross validation (70% training, 30% test), and within each outer loop is an inner loop with 10-fold stratified cross validation (70% training, 30% test). The inner loop models are used for feature selection and hyperparameter tuning of the outer loop model.
+
+```{r}
+############## Run outer- and inner-loops
+final_accuracy_nn <- list()
+final_performance_list = list(sensitivitiy=list(), specificity=list(), recall=list(), f1=list())
+
+### Most outer loop - divide the training & validation set
+# For a 10-fold CV
+for (k in 1:CV_FOLDS_OUTER) {
+  # Set new seed for every iteration
+  set.seed(k)
+  
+  # Use partition function to split data set into a training & validation set
+  training_test_set <- split_aCGH(train_data, TRAINING_SIZE_OUTER)
+  training_set <- training_test_set[[1]]
+  test_set <- training_test_set[[2]]
+
+  # Set list to store accuracies, features and other performance metrics
+  accuracy_list_nn = list()
+  feature_list_nn = list(feature=list())
+  performance_list = list(sensitvitiy=list(), specificity=list(), recall=list(), f1=list())
+  
+  # List for hyperparameters
+  hyperparameters_list = list(size=list(), decay=list())
+  
+  #### Inner loop - training
+  for (i in 1:CV_FOLDS_INNER) {
+    # Check progress
+    print(paste('Outer-loop', k, 'with inner loop', i, 'initialzed, at:', Sys.time()))
+    
+    # Set new seed for every iteration
+    set.seed(i*k)
+    
+    # New training sets for the feature selection from the training set
+    training_test_set.feature <- split_aCGH(training_set, TRAINING_SIZE_INNER)
+    training_set.feature <- training_test_set.feature[[1]]
+    test_set.feature <- training_test_set.feature[[2]]
+    
+    # Boruta - feature selection
+    boruta_features <- feature_selection.boruta(training_set.feature)
+    training_set.feature.data <- training_set.feature %>% select(-Subgroup)
+    feature_selection.boruta_train <- training_set.feature.data[boruta_features$finalDecision == 'Confirmed']
+    features.boruta_train <- colnames(feature_selection.boruta_train)
+    feature_selection.boruta_train$Subgroup <- training_set.feature$Subgroup
+    test_set.feature.data <- test_set.feature %>% select(-Subgroup)
+    feature_selection.boruta_test <- test_set.feature.data[boruta_features$finalDecision == 'Confirmed']
+    feature_selection.boruta_test$Subgroup <- test_set.feature$Subgroup
+    
+    # Accuracy values of fecature selection
+    nn_model = predict.neural_network(feature_selection.boruta_train, feature_selection.boruta_test)
+    print(paste('Finished constructing neural network, at:', Sys.time()))
+    
+    # Evaluate overall accuracy for feature selection
+    score_nn = confusionMatrix(test_set.feature$Subgroup, nn_model$predictions)
+    
+    # Evaluate performance per class for feature selection
+    performance.df <- as.data.frame(score_nn[['byClass']])
+    performance_list$sensitivity[[i]] <- performance.df$Sensitivity
+    performance_list$specificity[[i]] <- performance.df$Specificity
+    performance_list$recall[[i]] <- performance.df$Recall
+    performance_list$f1[[i]] <- performance.df$F1
+    # Append the accuracy and corresponding features to lists
+    accuracy_list_nn[i] <- score_nn[['overall']][['Accuracy']]
+    feature_list_nn$feature[[i]] <- features.boruta_train
+    
+    # Store hyperparameters in list
+    hyperparameters_list$size[[i]] <- nn_model$model$bestTune$size
+    hyperparameters_list$decay[[i]] <- nn_model$model$bestTune$decay
+  }
+  avgs_vector <- unlist(accuracy_list_nn)
+  top_index <- which.max(avgs_vector)
+  top_features <- feature_list_nn$feature[[top_index]]
+  
+  training.features <- training_set[,top_features]
+  test.features <- test_set[,top_features]
+  
+  training_set <- cbind(training_set$Subgroup, training.features)
+  test_set <- cbind(test_set$Subgroup, test.features)
+  colnames(training_set)[1] <- 'Subgroup'
+  colnames(test_set)[1] <- 'Subgroup'
+  
+  # Neural network - outer loop
+  best_size <- unlist(hyperparameters_list$size)[top_index]
+  best_decay <- unlist(hyperparameters_list$decay)[top_index]
+  nn_model = predict.neural_network(training_set, test_set, best_decay, best_size)
+  score_nn.inner = confusionMatrix(test_set$Subgroup, nn_model$predictions)
+  
+  # Accuracy
+  acc_nn = score_nn[['overall']][['Accuracy']]
+  final_accuracy_nn[k] <- acc_nn
+  
+  # Performance metrics - Precision, Recall, Sensitvity, Specificity per class
+  final_performance.df <- as.data.frame(score_nn.inner[['byClass']])
+  final_performance_list$sensitivity[[k]] <- performance.df$Sensitivity
+  final_performance_list$specificity[[k]] <- performance.df$Specificity
+  final_performance_list$recall[[k]] <- performance.df$Recall
+  final_performance_list$f1[[k]] <- performance.df$F1
+  
+  # Save the models in a RDS file
+  model_rds_path <- file.path(root_dir, paste('nn_model_', k, '.rds', sep = ''))
+  saveRDS(nn_model$model, model_rds_path)
+  print(paste('Saved neural network model to RDS file:', model_rds_path, ', at:', Sys.time()))
+}
+
+best_accuracy_index <- which.max(unlist(final_accuracy_nn))
+print(paste('The best performing model (by accuracy) is model #', best_accuracy_index, 'at an accuracy of:', final_accuracy_nn[[best_accuracy_index]]))
+print(paste('The overall accuracy of all models is:', mean(unlist(final_accuracy_nn), na.rm = TRUE)))
+```

@@ -1,51 +1,35 @@
 ---
-title: "CATS-CLustering"
+title: 'CATS-Clustering'
 output: html_notebook
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
-
-First we will make a dataframe of the files and transpose the data so the samples are depicted on the rows and the chromosomal regions on the columns.
-
 ```{r}
-#########LOADING THE DATASET
-#### Install packages
-#
-library("dplyr")
-library("tidyr")
-library("tibble")
-#Visualisation
-library("plotly")
-library("ggplot2")
-#Dendrogram
-library("ggdendro")
-library("reshape2")
-library("grid")
-#Clustering / Self-organising maps
-library("cluster")
-library("fossil")
-library("kohonen") 
-root_dir = getwd()
+#### Set root directory & load functions
+ROOT_DIR = here::here()
+source(file.path(ROOT_DIR, 'code', 'CATS_functions.R'))
+
 #### aCGH data
 #Load all the data (log2-scaled of copy number aberations between breast cancer subtypes)
-train_call <- read.delim(file.path(root_dir,'data', 'Train_call.txt'), header = TRUE, sep='\t')
+train_call <- read.delim(file.path(ROOT_DIR, 'data', 'train_call.tsv'), header = TRUE, sep='\t')
 train_call$ID <- seq.int(nrow(train_call))
 genomic_regions <- train_call[c('ID','Chromosome','Start','End','Nclone')]
 train_call <- subset(train_call, select = -c(Chromosome,Start,End,Nclone))
 train_call <- as.data.frame(t(subset(train_call, select = -c(ID))))
+
 #### Clinical data
-train_clinical <- read.delim(file.path(root_dir, 'data', "Train_clinical.txt"), header=TRUE, sep="\t")
+train_clinical <- read.delim(file.path(ROOT_DIR, 'data', 'train_clinical.tsv'), header=TRUE, sep='\t')
 row.names(train_clinical) <- train_clinical$Sample
 train_clinical <- train_clinical[,-(1:1), drop=FALSE]
+
 #### Summarize the two datasets
 summary(train_clinical)
+
 #### Merge the two datasets
 train_data <- merge(train_call, train_clinical, by='row.names')
 rownames(train_data) <- train_data$Row.names
 train_data$Row.names <- NULL
 train_data <- train_data %>% select(Subgroup, everything())
+
 ### Order the merged dataset according the subtype
 train_data.order <- train_data[order(train_data$Subgroup),]
 train_clinical.order <- subset(train_data.order, select = c(Subgroup))
@@ -72,9 +56,9 @@ heatmap.NN <- heatmaply(
   file = c('images/heatmaply_plot.png'),
   hclust_method = 'average',
   plot_method = 'plotly',
-  xlab = "Chromosomal regions",
-  ylab = "Breast cancer samples",
-  main = "Heatmap of chromosomal copy number abberations in breast tumours",
+  xlab = 'Chromosomal regions',
+  ylab = 'Breast cancer samples',
+  main = 'Heatmap of chromosomal copy number abberations in breast tumours',
   Rowv = FALSE,
   Colv = TRUE,
   fontsize_col = 1,
@@ -89,7 +73,7 @@ heatmap.NN <- heatmaply(
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 3)
 
 heatmap.NN
-orca(heatmap.NN, file = "/images/heatmap_NN.png")
+orca(heatmap.NN, file = '/images/heatmap_NN.png')
 
 #NNet and KNN shared
 heatmap.NN_KNN <- heatmaply(
@@ -97,9 +81,9 @@ heatmap.NN_KNN <- heatmaply(
   file = c('images/heatmaply_plot.png'),
   hclust_method = 'average',
   plot_method = 'plotly',
-  xlab = "Chromosomal regions",
-  ylab = "Breast cancer samples",
-  main = "Heatmap of chromosomal copy number abberations in breast tumours",
+  xlab = 'Chromosomal regions',
+  ylab = 'Breast cancer samples',
+  main = 'Heatmap of chromosomal copy number abberations in breast tumours',
   Rowv = FALSE,
   Colv = TRUE,
   fontsize_col = 1,
@@ -114,7 +98,7 @@ heatmap.NN_KNN <- heatmaply(
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 3)
 
 heatmap.NN_KNN
-orca(heatmap.NN_KNN, file = "/images/heatmap_NN_KNN_shared.png")
+orca(heatmap.NN_KNN, file = '/images/heatmap_NN_KNN_shared.png')
 
 #NNet, KNN and NSC shared
 heatmap.NN_KNN_NSC <- heatmaply(
@@ -122,9 +106,9 @@ heatmap.NN_KNN_NSC <- heatmaply(
   file = c('images/heatmaply_plot.png'),
   hclust_method = 'average',
   plot_method = 'plotly',
-  xlab = "Chromosomal regions",
-  ylab = "Breast cancer samples",
-  main = "Heatmap of chromosomal copy number abberations in breast tumours",
+  xlab = 'Chromosomal regions',
+  ylab = 'Breast cancer samples',
+  main = 'Heatmap of chromosomal copy number abberations in breast tumours',
   Rowv = FALSE,
   Colv = TRUE,
   fontsize_col = 1,
@@ -139,23 +123,21 @@ heatmap.NN_KNN_NSC <- heatmaply(
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 3)
 
 heatmap.NN_KNN_NSC
-orca(heatmap.NN_KNN_NSC, file = "/images/heatmap_NN_KNN_NSC_shared.png")
+orca(heatmap.NN_KNN_NSC, file = '/images/heatmap_NN_KNN_NSC_shared.png')
 ```
 
 
 ```{r}
 ########### Heatmap of the data (ordered & clustered)
-#### Install packages
-library(heatmaply)
 #### Heatmap of the breast cancer samples ordered by subtype and the chromosomal regions clustered based on hierarchical clustering with average linkage
 h.cluster <- heatmaply(
   subset(train_data.order, select = -c(Subgroup)),
   file = c('images/heatmaply_plot.png'),
   hclust_method = 'average',
   plot_method = 'plotly',
-  xlab = "Chromosomal regions",
-  ylab = "Breast cancer samples",
-  main = "Heatmap of chromosomal copy number abberations in breast tumours",
+  xlab = 'Chromosomal regions',
+  ylab = 'Breast cancer samples',
+  main = 'Heatmap of chromosomal copy number abberations in breast tumours',
   Rowv = FALSE,
   Colv = TRUE,
   fontsize_col = 1,
@@ -169,7 +151,7 @@ h.cluster <- heatmaply(
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 2) %>%
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 3)
 h.cluster
-orca(h.cluster, file = "/images/heatmap_clustered_chromosomal_regions.png")
+orca(h.cluster, file = '/images/heatmap_clustered_chromosomal_regions.png')
 
 #### Heatmap of the breast cancer samples ordered by subtype and the chromosomal regions clustered based on hierarchical clustering with average linkage
 h.ordered <- heatmaply(
@@ -177,9 +159,9 @@ h.ordered <- heatmaply(
   file = c('images/heatmaply_plot.png'),
   hclust_method = 'average',
   plot_method = 'plotly',
-  xlab = "Chromosomal regions",
-  ylab = "Breast cancer samples",
-  main = "Heatmap of chromosomal copy number abberations in breast tumours",
+  xlab = 'Chromosomal regions',
+  ylab = 'Breast cancer samples',
+  main = 'Heatmap of chromosomal copy number abberations in breast tumours',
   Rowv = FALSE,
   Colv = FALSE,
   fontsize_col = 1,
@@ -193,7 +175,7 @@ h.ordered <- heatmaply(
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 2) %>%
   colorbar(tickfont = list(size = 10), titlefont = list(size = 10), x = c(1), y=c(0.25), len = c(0.25), which = 3)
 h.ordered
-orca(h.ordered, file = "/images/heatmap_ordered_subtype_chromosomal_regions.png")
+orca(h.ordered, file = '/images/heatmap_ordered_subtype_chromosomal_regions.png')
 ```
 
 Firstly, a heatmap was constructed which depicts the samples ordered by subtype (HER2+ equals green, HR+ equals red and Triple Negative equals black) with their corresponding chromosomal copy number profile over the x-axis. As can be observed there are no initial obvious regions discriminating the three subtypes, indicating additional feature selection is advised to train our classifier.
@@ -202,36 +184,38 @@ For the next part we will look at the distribution of the patterns per sample in
 
 ```{r}
 ########## Clustering methods
-###Install packages
-library("ggcorrplot")
-#Save the annotation of the subgroups per sample numerically
+# Save the annotation of the subgroups per sample numerically
 annotation <- as.numeric(train_clinical$Subgroup)
-###Correlation based distance measures 
-#Spearman between variables
+
+### Correlation based distance measures 
+# Spearman between variables
 data.corr.regions <- round(cor(subset(train_data.order, select = -c(Subgroup)),
                  method = 'spearman', 
                  use = 'complete.obs'), 1)
-#Spearman between samples
+# Spearman between samples
 data.corr.samples <- round(cor(t(subset(train_data.order, select = -c(Subgroup))), 
                  method = 'spearman', 
                  use = 'complete.obs'), 1)
 corr.plot <- ggcorrplot(data.corr.samples,
-           type = "lower",
-           method = "square",
+           type = 'lower',
+           method = 'square',
            hc.order = FALSE,
            ggtheme = ggplot2::theme_gray,
-           colors = c("#6D9EC1", "white", "#E46726"))
+           colors = c('#6D9EC1', 'white', '#E46726'))
 corr.plot +
   theme(
     axis.text.x = element_text(size = 4, colour = as.numeric(train_clinical.order$Subgroup)),
     axis.text.y = element_text(size = 4, colour = as.numeric(train_clinical.order$Subgroup)))
-###Euclidian based distance measures
-#K-medoids clustering
+
+
+### Euclidian based distance measures
+# K-medoids clustering
 data.Euc <- pam(train_call,3,diss = FALSE)
 table(data.Euc$cluster,train_clinical$Subgroup)
 rand.index(data.Euc$cluster, annotation)
 adj.rand.index(data.Euc$cluster, annotation)
-#Cosine distance clustering
+
+# Cosine distance clustering
 CosDist = function(data){
    data = as.matrix(data)
    Cos.Sim = data / sqrt(rowSums(data * data))
@@ -243,16 +227,18 @@ data.Cos <- pam(Cos_data, 3, diss = TRUE)
 table(data.Cos$cluster,train_clinical$Subgroup)
 rand.index(data.Cos$cluster, annotation)
 adj.rand.index(data.Cos$cluster, annotation)
-#Hierarchical clustering
-dist_data <- dist(train_call,method = "euclidean")
-hc_data <- hclust(dist_data, method = "average")
+
+# Hierarchical clustering
+dist_data <- dist(train_call,method = 'euclidean')
+hc_data <- hclust(dist_data, method = 'average')
 clusterCut <- cutree(hc_data, 3)
 table(clusterCut, train_clinical$Subgroup)
 rand.index(clusterCut,annotation)
 adj.rand.index(clusterCut,annotation)
-#Dendrogram of hierarchical clustering
+
+# Dendrogram of hierarchical clustering
 call.dendro <- as.dendrogram(hc_data)
-call.dendro_data <- dendro_data(call.dendro, type = "rectangle")
+call.dendro_data <- dendro_data(call.dendro, type = 'rectangle')
 order.dend <- order.dendrogram(call.dendro)
 dend_call.plot <- ggplot(call.dendro_data$segments) +
   geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) +
@@ -260,21 +246,28 @@ dend_call.plot <- ggplot(call.dendro_data$segments) +
   ylim(-10, 80)
 print(dend_call.plot)
 dendro.plot <- ggdendrogram(data = call.dendro, rotate = TRUE, labels = TRUE, theme_dendro = FALSE)
-###Self-organising map
-#Settings for the amount of grid-cells (c1xc2)
+
+
+### Self-Organising Maps
+# Settings for the amount of grid-cells (c1xc2)
 c1 = 5
 c2 = 6
-#Create a object with the self organising map components
-datamap <- som(as.matrix(train_call), grid = somgrid(c1, c2, "hexagonal"), rlen=800)
-#Plot the training error
-plot(datamap, type="changes")
-#Amount of samples per grid
-counts <- plot(datamap, type="counts", shape = "straight")
-#Distances between the profiles of the grid
-distance.plot <- plot(datamap, type="dist.neighb")
-#Quality-map of the mean distance of all samples in the corresponding grid cell
-similarities <- plot(datamap, type="quality", palette.name = terrain.colors)
-plot(datamap, type = "mapping",labels = train_clinical$Subgroup, col = annotation ,main = "mapping plot")
+
+# Create a object with the self organising map components
+datamap <- som(as.matrix(train_call), grid = somgrid(c1, c2, 'hexagonal'), rlen=800)
+
+# Plot the training error
+plot(datamap, type='changes')
+
+# Amount of samples per grid
+counts <- plot(datamap, type='counts', shape = 'straight')
+
+# Distances between the profiles of the grid
+distance.plot <- plot(datamap, type='dist.neighb')
+
+# Quality-map of the mean distance of all samples in the corresponding grid cell
+similarities <- plot(datamap, type='quality', palette.name = terrain.colors)
+plot(datamap, type = 'mapping',labels = train_clinical$Subgroup, col = annotation ,main = 'mapping plot')
 ```
 
 Some further clustering approaches revealed

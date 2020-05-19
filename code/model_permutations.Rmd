@@ -1,64 +1,32 @@
 ---
 title: "Permutation analysis of classification model accuracy (NN, KNN, NSC) on aCGH data for breast cancer"
-author: "Koen Rademaker"
-date: "5/14/2020"
 output: html_document
 ---
 
 # Permutations
 
 ```{r}
-####################
-root_dir <- here::here()
-# Load CATS settings, global parameters and functions
-source(file.path(root_dir, 'code', 'CATS_functions.R'))
+#### Set root directory & load functions
+ROOT_DIR = here::here()
+source(file.path(ROOT_DIR, 'code', 'CATS_functions.R'))
 
-# Define models
-m1 <- readRDS(file.path(root_dir, 'model', 'neural_networks', 'NN_model_5.rds'))
-# m2 <-
-m3 <- readRDS(file.path(root_dir, 'model', 'KNN', 'KNN_model_2.rds'))
-# m4 <-
-m5 <- readRDS(file.path(root_dir, 'model', 'NSC', 'NSC_model_2.rds'))
-# m6 <-
+#### Define models
+m1 <- readRDS(file.path(ROOT_DIR, 'model', 'neural_networks', 'NN_model_5.rds'))
+# m2 <- readRDS(file.path(ROOT_DIR, 'model', 'neural_networks', 'NN_model_*.rds'))
+m3 <- readRDS(file.path(ROOT_DIR, 'model', 'KNN', 'KNN_model_2.rds'))
+# m4 <- readRDS(file.path(ROOT_DIR, 'model', 'KNN', 'KNN_model_*.rds'))
+m5 <- readRDS(file.path(ROOT_DIR, 'model', 'NSC', 'NSC_model_2.rds'))
+# m6 <- readRDS(file.path(ROOT_DIR, 'model', 'NSC', 'NSC_model_*.rds'))
 
-# Define parameters
-N_PERMUTATIONS <- 1000
-models.SUBINDEX_MODEL <- 1
-models.SUBINDEX_TYPE <- 2
-
-### Define functions
-# Get the hyperparameters of a model
-get_hyperparameters <- function(model){
-  hyperparameters <- models[[model]][[models.SUBINDEX_MODEL]]$bestTune
-  return(hyperparameters)
-}
-
-# Get the number of features for a specific model type
-get_n_features <- function(model, model_type){
-  if(model_type == 'neural network'){
-    n_features <- length(models[[model]][[models.SUBINDEX_MODEL]]$finalModel$coefnames)
-  }
-  if(model_type == 'k-nearest neighbors'){
-    n_features <- length(models[[model]][[models.SUBINDEX_MODEL]]$finalModel$xNames)
-  }
-  if(m.type == 'nearest shrunken centroid'){
-    n_features <- length(models[[model]][[models.SUBINDEX_MODEL]]$finalModel$xNames)
-  }
-  return(n_features)
-}
-####################
-
-
-####################
 ### Initialize data
 # Load aCGH dataset
-aCGH_call_data <- read.delim(file.path(root_dir, 'data', 'train_call.tsv'), header = TRUE, sep = '\t')
+aCGH_call_data <- read.delim(file.path(ROOT_DIR, 'data', 'train_call.tsv'), header = TRUE, sep = '\t')
 aCGH_call_data$ID <- seq.int(nrow(aCGH_call_data))
 aCGH_call_data <- subset(aCGH_call_data, select = -c(Chromosome,Start,End,Nclone))
 aCGH_call_data <- as.data.frame(t(subset(aCGH_call_data, select = -c(ID))))
 aCGH_call_data.N_FEATURES <- length(aCGH_call_data)
 
-aCGH_clinical_data <- read.delim(file.path(root_dir, 'data', 'train_clinical.tsv'), header = TRUE, sep = '\t')
+aCGH_clinical_data <- read.delim(file.path(ROOT_DIR, 'data', 'train_clinical.tsv'), header = TRUE, sep = '\t')
 row.names(aCGH_clinical_data) <- aCGH_clinical_data$Sample
 aCGH_clinical_data <- aCGH_clinical_data[,-(1:1), drop=FALSE]
 
@@ -66,7 +34,6 @@ aCGH_data <- merge(aCGH_call_data, aCGH_clinical_data, by = 'row.names')
 rownames(aCGH_data) <- aCGH_data$Row.names
 aCGH_data$Row.names <- NULL
 aCGH_data <- aCGH_data %>% select(Subgroup, everything())
-
 
 # Load models
 models <- list(list(m1, as.factor('neural network')),
@@ -80,7 +47,8 @@ models <- list(list(m1, as.factor('neural network')),
 # Initialize list for results
 permutations.accuracy <- list(numeric(N_PERMUTATIONS))[rep(1, length(models))]
 
-### Permutations
+
+#### Permutations
 # Iterate over models
 for(m in 1:length(models)){
   # Obtain hyperparameters 'H' and number of features 'n'
@@ -140,6 +108,7 @@ for(m in 1:length(models)){
 
 ```{r}
 permutations.accuracy.tibble <- tibble(m1 = permutations.accuracy[[1]], m3 = permutations.accuracy[[2]], m5 = permutations.accuracy[[3]])
+# permutations.accuracy.tibble <- tibble(m1 = permutations.accuracy[[1]], m3 = permutations.accuracy[[3]], m5 = permutations.accuracy[[5]])
 
 m1.cv_accuracy <- 0.8947368
 m1_plot <- ggplot(permutations.accuracy.tibble, aes(x = m1)) +
@@ -162,7 +131,7 @@ m3_plot <- ggplot(permutations.accuracy.tibble, aes(x = m3)) +
                   xlim(c(0.0, 1.0))
 
 m5.cv_accuracy <- 0.7142857
-m5_plot <- ggplot(permutations.accuracy.tibble, aes(x = m1)) +
+m5_plot <- ggplot(permutations.accuracy.tibble, aes(x = m5)) +
                   geom_histogram(color = 'black', fill = '#619CFF', binwidth = 0.038) +
                   labs(x = 'Accuracy', y = 'Frequency') +
                   geom_vline(aes(xintercept = m5.cv_accuracy, color = 'red')) +
@@ -181,10 +150,8 @@ print(m5_plot)
 ```{r}
 m1.p_value <- (nrow(subset(permutations.accuracy.tibble, m1 >= m1.cv_accuracy) %>% select(m1)) + 1) / N_PERMUTATIONS
 # m2.p_value <- (nrow(subset(permutations.accuracy.tibble, m2 >= m2.cv_accuracy) %>% select(m2)) + 1) / N_PERMUTATIONS
-
 m3.p_value  <- (nrow(subset(permutations.accuracy.tibble, m3 >= m3.cv_accuracy) %>% select(m3)) + 1) / N_PERMUTATIONS
 # m4.p_value <- (nrow(subset(permutations.accuracy.tibble, m4 >= m4.cv_accuracy) %>% select(m4)) + 1) / N_PERMUTATIONS
-
 m5.p_value  <- (nrow(subset(permutations.accuracy.tibble, m5 >= m5.cv_accuracy) %>% select(m5)) + 1) / N_PERMUTATIONS
 # m6.p_value <- (nrow(subset(permutations.accuracy.tibble, m6 >= m6.cv_accuracy) %>% select(m6)) + 1) / N_PERMUTATIONS
 ```
