@@ -12,9 +12,8 @@ treatment decision will be based are:
 - HER2 positive: HER2+
 - Hormone receptor positive (HR+): ER+ and/or PR+, and HER2-
 - Triple negative (TN): ER-, PR- and HER2-
-Each of the three subtypes reacts differently to different types of treatment.
 
-In this assignment, we trained a classifier that is able to predict subtypes of breast cancer
+Each of the three subtypes reacts differently to different types of treatment. In this assignment, we trained a classifier that is able to predict subtypes of breast cancer
 tumors based on array CGH (aCGH) data.
 
 ## About our work
